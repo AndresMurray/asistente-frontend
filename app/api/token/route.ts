@@ -1,4 +1,4 @@
-import { AccessToken } from 'livekit-server-sdk';
+﻿import { AccessToken } from 'livekit-server-sdk';
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(request: NextRequest) {
@@ -18,6 +18,14 @@ export async function GET(request: NextRequest) {
     canPublish: true, 
     canSubscribe: true 
   });
+
+  at.roomConfig = {
+    agents: [
+      {
+        agentName: 'asistente-emergencias',
+      },
+    ],
+  };
 
   const token = await at.toJwt();
   return NextResponse.json({ token, url: process.env.NEXT_PUBLIC_LIVEKIT_URL });
