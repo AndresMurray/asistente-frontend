@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState } from 'react';
 import { LiveKitRoom, RoomAudioRenderer, VoiceAssistantControlBar, useVoiceAssistant } from '@livekit/components-react';
@@ -16,6 +16,8 @@ export default function Home() {
       const data = await response.json();
       if (data.token && data.url) {
         setConnectionDetails(data);
+      } else {
+        console.error('Respuesta incompleta del endpoint de token:', data);
       }
     } catch (error) {
       console.error('Error al obtener token:', error);
@@ -55,6 +57,7 @@ export default function Home() {
             token={connectionDetails.token}
             serverUrl={connectionDetails.url}
             connect={true}
+            audio={true}
             onDisconnected={handleDisconnect}
             className="flex flex-col items-center justify-center gap-8 w-full"
           >
