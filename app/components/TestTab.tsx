@@ -16,6 +16,8 @@ interface DebugData {
   tool_calls: ToolCall[];
   llm_metrics: LLMMetrics | null;
   config: SystemConfig;
+  total_response_ms?: number;
+  search_count?: number;
 }
 
 interface ToolCall {
@@ -51,7 +53,13 @@ interface LLMMetrics {
   e2e_latency_ms: number | null;
   llm_ttft_ms: number | null;
   tts_ttfb_ms: number | null;
+  playback_latency_ms: number | null;
   end_of_turn_delay_ms: number | null;
+  prompt_tokens: number | null;
+  completion_tokens: number | null;
+  total_tokens: number | null;
+  cached_tokens: number | null;
+  tokens_per_second: number | null;
 }
 
 interface SystemConfig {
@@ -116,6 +124,8 @@ export default function TestTab() {
                   tool_calls: data.tool_calls || [],
                   llm_metrics: data.llm_metrics || null,
                   config: data.config || {} as SystemConfig,
+                  total_response_ms: data.total_response_ms,
+                  search_count: data.search_count,
                 }
               : undefined;
 
@@ -301,6 +311,24 @@ function MessageBubble({ message }: { message: ChatMessage }) {
 function DebugPanel({ debug }: { debug: DebugData }) {
   return (
     <div className="mt-2 space-y-3 text-xs">
+      {/* Summary */}
+      <div className="flex flex-wrap gap-3 p-2 bg-slate-950/50 rounded border border-slate-800/50">
+        {debug.total_response_ms != null && (
+          <div className="flex items-center gap-1.5">
+            <Clock size={12} className="text-emerald-400" />
+            <span className="text-slate-500">Total:</span>
+            <span className="text-slate-200 font-mono font-medium">{debug.total_response_ms}ms</span>
+          </div>
+        )}
+        {debug.search_count != null && (
+          <div className="flex items-center gap-1.5">
+            <Search size={12} className="text-blue-400" />
+            <span className="text-slate-500">Búsquedas:</span>
+            <span className="text-slate-200 font-mono font-medium">{debug.search_count}</span>
+          </div>
+        )}
+      </div>
+
       {/* Tool calls */}
       {debug.tool_calls.length > 0 && (
         <div>
@@ -517,23 +545,51 @@ function FragmentCard({ fragment, index }: { fragment: Fragment; index: number }
 }
 
 function MetricsGrid({ metrics }: { metrics: LLMMetrics }) {
-  const items = [
-    { label: 'E2E Latency', value: metrics.e2e_latency_ms },
+  const timingItems = [
+    { label: 'E2E Latency', value: metrics.e2e_latency_ms, note: metrics.e2e_latency_ms == null ? '(solo disponible en modo voz)' : null },
     { label: 'LLM TTFT', value: metrics.llm_ttft_ms },
     { label: 'TTS TTFB', value: metrics.tts_ttfb_ms },
+    { label: 'Playback', value: metrics.playback_latency_ms },
     { label: 'End of Turn', value: metrics.end_of_turn_delay_ms },
   ];
 
+  const tokenItems = [
+    { label: 'Prompt Tokens', value: metrics.prompt_tokens, isToken: true },
+    { label: 'Completion Tokens', value: metrics.completion_tokens, isToken: true },
+    { label: 'Total Tokens', value: metrics.total_tokens, isToken: true },
+    { label: 'Cached Tokens', value: metrics.cached_tokens, isToken: true },
+    { label: 'Tokens/seg', value: metrics.tokens_per_second, isRate: true },
+  ];
+
   return (
-    <div className="grid grid-cols-2 gap-2">
-      {items.map((item) => (
-        <div key={item.label} className="bg-slate-900/50 rounded p-2 border border-slate-800/50">
-          <div className="text-[10px] text-slate-500">{item.label}</div>
-          <div className="text-sm font-mono text-slate-200">
-            {item.value != null ? `${(item.value * 1000).toFixed(0)}ms` : '—'}
+    <div className="space-y-2">
+      <div className="grid grid-cols-2 gap-2">
+        {timingItems.map((item) => (
+          <div key={item.label} className="bg-slate-900/50 rounded p-2 border border-slate-800/50">
+            <div className="text-[10px] text-slate-500">{item.label}</div>
+            <div className="text-sm font-mono text-slate-200">
+              {item.value != null ? `${(item.value * 1000).toFixed(0)}ms` : '—'}
+            </div>
+            {item.note && <div className="text-[9px] text-slate-600 mt-0.5">{item.note}</div>}
           </div>
+        ))}
+      </div>
+      {tokenItems.some(i => i.value != null) && (
+        <div className="grid grid-cols-3 gap-2">
+          {tokenItems.map((item) => (
+            <div key={item.label} className="bg-slate-900/50 rounded p-2 border border-slate-800/50">
+              <div className="text-[10px] text-slate-500">{item.label}</div>
+              <div className="text-sm font-mono text-slate-200">
+                {item.value != null
+                  ? item.isRate
+                    ? `${item.value.toFixed(1)}`
+                    : item.value.toLocaleString()
+                  : '—'}
+              </div>
+            </div>
+          ))}
         </div>
-      ))}
+      )}
     </div>
   );
 }
