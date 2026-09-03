@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { LiveKitRoom, RoomAudioRenderer, VoiceAssistantControlBar, useVoiceAssistant } from '@livekit/components-react';
+import { useKrispNoiseFilter } from '@livekit/components-react/krisp';
 import '@livekit/components-styles';
-import { Phone, PhoneOff } from 'lucide-react';
+import { Phone, PhoneOff, ShieldCheck, ShieldOff, Loader2 } from 'lucide-react';
 
 export default function VoiceTab() {
   const [connectionDetails, setConnectionDetails] = useState<{ token: string; url: string } | null>(null);
@@ -51,6 +52,7 @@ export default function VoiceTab() {
           className="flex flex-col items-center justify-center gap-8 w-full"
         >
           <AgentVisualizer />
+          <NoiseFilterControl />
           <RoomAudioRenderer />
           <VoiceAssistantControlBar />
           <button
@@ -63,6 +65,52 @@ export default function VoiceTab() {
         </LiveKitRoom>
       )}
     </div>
+  );
+}
+
+/** Krisp noise cancellation toggle — auto-enables on mount. */
+function NoiseFilterControl() {
+  const krisp = useKrispNoiseFilter();
+  const [autoEnabled, setAutoEnabled] = useState(false);
+
+  // Auto-enable on first render once the processor is ready
+  useEffect(() => {
+    if (!autoEnabled && !krisp.isNoiseFilterEnabled && !krisp.isNoiseFilterPending) {
+      krisp.setNoiseFilterEnabled(true);
+      setAutoEnabled(true);
+    }
+  }, [autoEnabled, krisp]);
+
+  const toggle = () => {
+    krisp.setNoiseFilterEnabled(!krisp.isNoiseFilterEnabled);
+  };
+
+  return (
+    <button
+      onClick={toggle}
+      disabled={krisp.isNoiseFilterPending}
+      title={krisp.isNoiseFilterEnabled ? 'Filtro de ruido activo — clic para desactivar' : 'Filtro de ruido inactivo — clic para activar'}
+      className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold transition-all cursor-pointer border ${
+        krisp.isNoiseFilterPending
+          ? 'bg-slate-800 border-slate-700 text-slate-500'
+          : krisp.isNoiseFilterEnabled
+          ? 'bg-emerald-600/20 border-emerald-500/30 text-emerald-400 hover:bg-emerald-600/30'
+          : 'bg-slate-800/60 border-slate-700 text-slate-400 hover:bg-slate-700/60'
+      }`}
+    >
+      {krisp.isNoiseFilterPending ? (
+        <Loader2 size={14} className="animate-spin" />
+      ) : krisp.isNoiseFilterEnabled ? (
+        <ShieldCheck size={14} />
+      ) : (
+        <ShieldOff size={14} />
+      )}
+      {krisp.isNoiseFilterPending
+        ? 'Cargando filtro…'
+        : krisp.isNoiseFilterEnabled
+        ? 'Filtro de Ruido ON'
+        : 'Filtro de Ruido OFF'}
+    </button>
   );
 }
 
@@ -84,3 +132,4 @@ function AgentVisualizer() {
     </div>
   );
 }
+
