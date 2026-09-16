@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState, useEffect } from 'react';
 import { LiveKitRoom, RoomAudioRenderer, VoiceAssistantControlBar, useVoiceAssistant } from '@livekit/components-react';
@@ -68,7 +68,7 @@ export default function VoiceTab() {
   );
 }
 
-/** Krisp noise cancellation toggle — auto-enables on mount. */
+/** Krisp noise cancellation toggle - auto-enables on mount. */
 function NoiseFilterControl() {
   const krisp = useKrispNoiseFilter();
   const [autoEnabled, setAutoEnabled] = useState(false);
@@ -89,7 +89,7 @@ function NoiseFilterControl() {
     <button
       onClick={toggle}
       disabled={krisp.isNoiseFilterPending}
-      title={krisp.isNoiseFilterEnabled ? 'Filtro de ruido activo — clic para desactivar' : 'Filtro de ruido inactivo — clic para activar'}
+      title={krisp.isNoiseFilterEnabled ? 'Filtro de ruido activo - clic para desactivar' : 'Filtro de ruido inactivo - clic para activar'}
       className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold transition-all cursor-pointer border ${
         krisp.isNoiseFilterPending
           ? 'bg-slate-800 border-slate-700 text-slate-500'
@@ -106,7 +106,7 @@ function NoiseFilterControl() {
         <ShieldOff size={14} />
       )}
       {krisp.isNoiseFilterPending
-        ? 'Cargando filtro…'
+        ? 'Cargando filtro...'
         : krisp.isNoiseFilterEnabled
         ? 'Filtro de Ruido ON'
         : 'Filtro de Ruido OFF'}
@@ -116,20 +116,52 @@ function NoiseFilterControl() {
 
 function AgentVisualizer() {
   const { state } = useVoiceAssistant();
+
   return (
     <div className="flex flex-col items-center gap-4">
-      <div className={`relative flex items-center justify-center w-32 h-32 rounded-full border transition-all duration-500 ${
-        state === 'speaking'
-          ? 'bg-red-500/20 border-red-500 animate-pulse scale-105'
-          : state === 'listening'
-          ? 'bg-emerald-500/10 border-emerald-500/40'
-          : 'bg-slate-900 border-slate-800'
-      }`}>
-        <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-          {state === 'speaking' ? 'Agente Hablando' : state === 'listening' ? 'Escuchándote' : 'En espera'}
-        </span>
+      <div
+        className={`relative flex flex-col items-center justify-center w-36 h-36 rounded-full border transition-all duration-500 ${
+          state === 'speaking'
+            ? 'bg-red-500/20 border-red-500 animate-pulse scale-105 shadow-lg shadow-red-950/50'
+            : state === 'listening'
+            ? 'bg-emerald-500/10 border-emerald-500/40 shadow-lg shadow-emerald-950/30'
+            : state === 'thinking'
+            ? 'bg-blue-500/20 border-blue-400 animate-pulse scale-105 shadow-lg shadow-blue-950/50'
+            : 'bg-slate-900 border-slate-800'
+        }`}
+      >
+        {state === 'thinking' ? (
+          <div className="flex flex-col items-center gap-2">
+            <Loader2 size={26} className="animate-spin text-blue-400" />
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-blue-300 text-center px-2">
+              Analizando...
+            </span>
+          </div>
+        ) : (
+          <span
+            className={`text-xs font-semibold uppercase tracking-wider text-center px-2 ${
+              state === 'speaking'
+                ? 'text-red-300'
+                : state === 'listening'
+                ? 'text-emerald-400'
+                : 'text-slate-400'
+            }`}
+          >
+            {state === 'speaking'
+              ? 'Agente Hablando'
+              : state === 'listening'
+              ? 'Escuchándote'
+              : 'En espera'}
+          </span>
+        )}
       </div>
+
+      {state === 'thinking' && (
+        <div className="flex items-center gap-2 text-xs font-medium text-blue-400 animate-pulse bg-blue-950/40 border border-blue-800/40 px-3 py-1.5 rounded-full">
+          <Loader2 size={12} className="animate-spin" />
+          <span>Consultando protocolos de emergencia...</span>
+        </div>
+      )}
     </div>
   );
 }
-

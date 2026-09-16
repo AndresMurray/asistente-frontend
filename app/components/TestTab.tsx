@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState, useRef, useEffect } from 'react';
 import { Room, RoomEvent } from 'livekit-client';
@@ -79,6 +79,7 @@ export default function TestTab() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string>('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const roomRef = useRef<Room | null>(null);
 
@@ -86,7 +87,7 @@ export default function TestTab() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  useEffect(scrollToBottom, [messages]);
+  useEffect(scrollToBottom, [messages, sending]);
 
   const handleConnect = async () => {
     setConnecting(true);
@@ -118,6 +119,12 @@ export default function TestTab() {
         try {
           const text = new TextDecoder().decode(payload);
           const data = JSON.parse(text);
+
+          if (data.type === 'chat_status') {
+            setStatusMessage(data.message || 'Asistente analizando la situación...');
+            return;
+          }
+
           if (data.type === 'chat_reply' || data.type === 'chat_reply_debug') {
             const debug: DebugData | undefined = data.type === 'chat_reply_debug'
               ? {
@@ -137,6 +144,7 @@ export default function TestTab() {
               debug,
             }]);
             setSending(false);
+            setStatusMessage('');
           }
         } catch (e) {
           console.error('Error parseando data:', e);
@@ -171,6 +179,7 @@ export default function TestTab() {
     };
     setMessages(prev => [...prev, userMsg]);
     setSending(true);
+    setStatusMessage('Asistente analizando la situación...');
 
     const payload = JSON.stringify({
       type: 'chat_request',
@@ -188,6 +197,7 @@ export default function TestTab() {
     } catch (error) {
       console.error('Error enviando mensaje:', error);
       setSending(false);
+      setStatusMessage('');
     }
   };
 
@@ -234,12 +244,25 @@ export default function TestTab() {
           <div className="text-center text-slate-600 mt-20">
             <Bot size={48} className="mx-auto mb-4 opacity-50" />
             <p className="text-sm">Conectate al agente y escribí una consulta para testear el pipeline RAG.</p>
-            <p className="text-xs mt-2 text-slate-700">Ejemplo: &quot;qué hago si alguien no respira&quot;</p>
+            <p className="text-xs mt-2 text-slate-700">Ejemplo: &quot;¿qué hago si alguien no respira?&quot;</p>
           </div>
         )}
         {messages.map(msg => (
           <MessageBubble key={msg.id} message={msg} />
         ))}
+        {sending && (
+          <div className="flex justify-start">
+            <div className="bg-slate-850 border border-blue-500/30 rounded-xl px-4 py-3 flex items-center gap-3 shadow-md shadow-blue-950/40 animate-pulse">
+              <Bot size={16} className="text-blue-400 shrink-0" />
+              <div className="flex items-center gap-2">
+                <Loader2 size={14} className="animate-spin text-blue-400" />
+                <span className="text-sm text-blue-200">
+                  {statusMessage || 'Asistente analizando la situación...'}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
         <div ref={messagesEndRef} />
       </div>
 
@@ -293,11 +316,48 @@ function MessageBubble({ message }: { message: ChatMessage }) {
                 >
                   {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                   <Zap size={12} />
-                  Debug info
+                  <span>Pipeline Debug ({message.debug.tool_calls.length} tools, {message.debug.total_response_ms ?? '—'}ms)</span>
                 </button>
 
                 {expanded && (
-                  <DebugPanel debug={message.debug} />
+                  <div className="mt-3 space-y-3">
+                    {/* Timing & Tokens */}
+                    {message.debug.llm_metrics && (
+                      <div>
+                        <div className="text-xs font-semibold text-slate-400 mb-1.5 flex items-center gap-1">
+                          <Clock size={12} />
+                          Métricas de Inferencia
+                        </div>
+                        <MetricsGrid metrics={message.debug.llm_metrics} />
+                      </div>
+                    )}
+
+                    {/* Tool Calls */}
+                    {message.debug.tool_calls.length > 0 && (
+                      <div>
+                        <div className="text-xs font-semibold text-slate-400 mb-1.5 flex items-center gap-1">
+                          <Search size={12} />
+                          Llamadas a Herramientas ({message.debug.tool_calls.length})
+                        </div>
+                        <div className="space-y-2">
+                          {message.debug.tool_calls.map((tc, i) => (
+                            <ToolCallCard key={i} toolCall={tc} index={i} />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* System Config */}
+                    {message.debug.config && (
+                      <div>
+                        <div className="text-xs font-semibold text-slate-400 mb-1.5 flex items-center gap-1">
+                          <Settings size={12} />
+                          Configuración Activa
+                        </div>
+                        <ConfigDisplay config={message.debug.config} />
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             )}
@@ -308,116 +368,50 @@ function MessageBubble({ message }: { message: ChatMessage }) {
   );
 }
 
-function DebugPanel({ debug }: { debug: DebugData }) {
-  return (
-    <div className="mt-2 space-y-3 text-xs">
-      {/* Summary */}
-      <div className="flex flex-wrap gap-3 p-2 bg-slate-950/50 rounded border border-slate-800/50">
-        {debug.total_response_ms != null && (
-          <div className="flex items-center gap-1.5">
-            <Clock size={12} className="text-emerald-400" />
-            <span className="text-slate-500">Total:</span>
-            <span className="text-slate-200 font-mono font-medium">{debug.total_response_ms}ms</span>
-          </div>
-        )}
-        {debug.search_count != null && (
-          <div className="flex items-center gap-1.5">
-            <Search size={12} className="text-blue-400" />
-            <span className="text-slate-500">Búsquedas:</span>
-            <span className="text-slate-200 font-mono font-medium">{debug.search_count}</span>
-          </div>
-        )}
-      </div>
-
-      {/* Tool calls */}
-      {debug.tool_calls.length > 0 && (
-        <div>
-          <h4 className="text-slate-400 font-semibold mb-1.5 flex items-center gap-1">
-            <Search size={12} /> Tools llamadas
-          </h4>
-          <div className="space-y-2">
-            {debug.tool_calls.map((tc, i) => (
-              <ToolCallCard key={i} toolCall={tc} />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {debug.tool_calls.length === 0 && (
-        <div className="text-slate-600 italic">No se llamó ninguna tool</div>
-      )}
-
-      {/* LLM Metrics */}
-      {debug.llm_metrics && (
-        <div>
-          <h4 className="text-slate-400 font-semibold mb-1.5 flex items-center gap-1">
-            <Clock size={12} /> Métricas LLM
-          </h4>
-          <MetricsGrid metrics={debug.llm_metrics} />
-        </div>
-      )}
-
-      {/* Config */}
-      {debug.config && Object.keys(debug.config).length > 0 && (
-        <div>
-          <h4 className="text-slate-400 font-semibold mb-1.5 flex items-center gap-1">
-            <Settings size={12} /> Configuración
-          </h4>
-          <ConfigDisplay config={debug.config} />
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ToolCallCard({ toolCall }: { toolCall: ToolCall }) {
+function ToolCallCard({ toolCall, index }: { toolCall: ToolCall; index: number }) {
   const [expanded, setExpanded] = useState(false);
-  const name = toolCall.tool;
-  const isSearch = name === 'buscar_protocolo';
+  const isSearch = toolCall.tool === 'buscar_protocolo';
 
   return (
-    <div className="bg-slate-900/50 rounded-lg border border-slate-800 overflow-hidden">
-      <button
+    <div className="bg-slate-900/80 rounded-lg p-2.5 border border-slate-800 text-xs">
+      <div
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between px-3 py-2 hover:bg-slate-800/50 transition-colors cursor-pointer"
+        className="flex items-center justify-between cursor-pointer"
       >
         <div className="flex items-center gap-2">
-          <span className="font-mono text-emerald-400">{name}</span>
-          {isSearch && toolCall.status && (
-            <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
-              toolCall.status === 'ok' ? 'bg-emerald-900/50 text-emerald-300' :
-              toolCall.status === 'no_match' ? 'bg-yellow-900/50 text-yellow-300' :
-              'bg-red-900/50 text-red-300'
-            }`}>
-              {toolCall.status}
-            </span>
-          )}
-          {!isSearch && toolCall.saved_fields && (
-            <span className="text-[10px] text-slate-500">
-              guardó: {toolCall.saved_fields.join(', ')}
-            </span>
+          <span className="text-[10px] font-mono bg-slate-800 px-1.5 py-0.5 rounded text-slate-400">
+            #{index + 1}
+          </span>
+          <span className="font-mono font-medium text-emerald-400">{toolCall.tool}</span>
+          {isSearch && toolCall.args?.query && (
+            <span className="text-slate-400 truncate max-w-xs">&quot;{String(toolCall.args.query)}&quot;</span>
           )}
         </div>
-        {expanded ? <ChevronDown size={14} className="text-slate-500" /> : <ChevronRight size={14} className="text-slate-500" />}
-      </button>
+        <div className="flex items-center gap-2">
+          {toolCall.total_latency_ms != null && (
+            <span className="font-mono text-slate-500">{toolCall.total_latency_ms}ms</span>
+          )}
+          {expanded ? <ChevronDown size={14} className="text-slate-500" /> : <ChevronRight size={14} className="text-slate-500" />}
+        </div>
+      </div>
 
       {expanded && (
-        <div className="px-3 pb-3 space-y-2 border-t border-slate-800">
-          {/* Search-specific details */}
+        <div className="mt-2.5 pt-2 border-t border-slate-800/60 space-y-2">
+          {/* Latency breakdown */}
+          {isSearch && toolCall.total_latency_ms != null && (
+            <TimingBar
+              embed_ms={toolCall.embed_ms || 0}
+              vector_search_ms={toolCall.vector_search_ms || 0}
+              rerank_ms={toolCall.rerank_ms || 0}
+              total_ms={toolCall.total_latency_ms}
+            />
+          )}
+
+          {/* Search details */}
           {isSearch && (
             <>
-              {/* Timing breakdown */}
-              {toolCall.total_latency_ms != null && (
-                <TimingBar
-                  embed_ms={toolCall.embed_ms || 0}
-                  vector_search_ms={toolCall.vector_search_ms || 0}
-                  rerank_ms={toolCall.rerank_ms || 0}
-                  total_ms={toolCall.total_latency_ms}
-                />
-              )}
-
-              {/* Stats */}
-              <div className="flex flex-wrap gap-3 text-[11px] text-slate-500">
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] text-slate-400">
+                <span>Estado: <span className="text-slate-300 font-mono">{toolCall.status || 'ok'}</span></span>
                 {toolCall.chunks_found != null && (
                   <span>Chunks encontrados: <span className="text-slate-300">{toolCall.chunks_found}</span></span>
                 )}
@@ -529,7 +523,7 @@ function FragmentCard({ fragment, index }: { fragment: Fragment; index: number }
         <span className="text-[10px] text-slate-600">
           [{index}] {fragment.section || 'sin sección'}
           {fragment.subsection ? ` > ${fragment.subsection}` : ''}
-          {fragment.page_start ? ` · pág. ${fragment.page_start}` : ''}
+          {fragment.page_start ? ` • pág. ${fragment.page_start}` : ''}
         </span>
         <span className={`text-[10px] font-mono ${
           fragment.score >= 0.7 ? 'text-emerald-400' :
