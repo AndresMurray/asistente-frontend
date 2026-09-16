@@ -383,7 +383,7 @@ function ToolCallCard({ toolCall, index }: { toolCall: ToolCall; index: number }
             #{index + 1}
           </span>
           <span className="font-mono font-medium text-emerald-400">{toolCall.tool}</span>
-          {isSearch && toolCall.args?.query && (
+          {isSearch && Boolean(toolCall.args?.query) && (
             <span className="text-slate-400 truncate max-w-xs">&quot;{String(toolCall.args.query)}&quot;</span>
           )}
         </div>
@@ -606,3 +606,4 @@ function ConfigDisplay({ config }: { config: SystemConfig }) {
     </div>
   );
 }
+
