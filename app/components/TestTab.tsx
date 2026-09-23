@@ -35,6 +35,8 @@ interface ToolCall {
   reranked?: boolean;
   fragments?: Fragment[];
   context_for_llm?: string | null;
+  // De dónde salió el protocolo: cache, semantico, lexico, db o respaldo.
+  origen?: string | null;
   saved_fields?: string[];
   was_critical?: boolean;
   triage_brief?: string;
@@ -370,7 +372,10 @@ function MessageBubble({ message }: { message: ChatMessage }) {
 
 function ToolCallCard({ toolCall, index }: { toolCall: ToolCall; index: number }) {
   const [expanded, setExpanded] = useState(false);
-  const isSearch = toolCall.tool === 'buscar_protocolo';
+  // prefetch_protocolo: protocolo que el sistema adjuntó antes de llamar al LLM
+  // (no lo pidió el modelo). Trae los mismos datos que buscar_protocolo.
+  const isPrefetch = toolCall.tool === 'prefetch_protocolo';
+  const isSearch = toolCall.tool === 'buscar_protocolo' || isPrefetch;
 
   return (
     <div className="bg-slate-900/80 rounded-lg p-2.5 border border-slate-800 text-xs">
@@ -383,6 +388,11 @@ function ToolCallCard({ toolCall, index }: { toolCall: ToolCall; index: number }
             #{index + 1}
           </span>
           <span className="font-mono font-medium text-emerald-400">{toolCall.tool}</span>
+          {isPrefetch && (
+            <span className="text-[10px] bg-sky-950/60 border border-sky-800/50 text-sky-300 px-1.5 py-0.5 rounded">
+              adjuntado por el sistema · {String(toolCall.args?.tema ?? '')}
+            </span>
+          )}
           {isSearch && Boolean(toolCall.args?.query) && (
             <span className="text-slate-400 truncate max-w-xs">&quot;{String(toolCall.args.query)}&quot;</span>
           )}
@@ -412,11 +422,14 @@ function ToolCallCard({ toolCall, index }: { toolCall: ToolCall; index: number }
             <>
               <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] text-slate-400">
                 <span>Estado: <span className="text-slate-300 font-mono">{toolCall.status || 'ok'}</span></span>
+                {toolCall.origen && (
+                  <span>Origen: <span className="text-slate-300 font-mono">{toolCall.origen}</span></span>
+                )}
                 {toolCall.chunks_found != null && (
                   <span>Chunks encontrados: <span className="text-slate-300">{toolCall.chunks_found}</span></span>
                 )}
                 {toolCall.candidate_count != null && (
-                  <span>Candidatos pgvector: <span className="text-slate-300">{toolCall.candidate_count}</span></span>
+                  <span>Candidatos: <span className="text-slate-300">{toolCall.candidate_count}</span></span>
                 )}
                 {toolCall.top_score != null && (
                   <span>Top score: <span className="text-slate-300">{toolCall.top_score.toFixed(3)}</span></span>
