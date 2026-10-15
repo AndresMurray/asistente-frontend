@@ -1,10 +1,19 @@
-﻿'use client';
+'use client';
 
 import { useState, useEffect } from 'react';
-import { LiveKitRoom, RoomAudioRenderer, VoiceAssistantControlBar, useVoiceAssistant } from '@livekit/components-react';
+import {
+  LiveKitRoom,
+  RoomAudioRenderer,
+  VoiceAssistantControlBar,
+  useLocalParticipant,
+  useVoiceAssistant,
+} from '@livekit/components-react';
 import { useKrispNoiseFilter } from '@livekit/components-react/krisp';
 import '@livekit/components-styles';
 import { Phone, PhoneOff, ShieldCheck, ShieldOff, Loader2 } from 'lucide-react';
+
+// Si el saludo no termina en este tiempo, el micrófono se habilita igual.
+const ESPERA_MAXIMA_SALUDO_MS = 45_000;
 
 export default function VoiceTab() {
   const [connectionDetails, setConnectionDetails] = useState<{ token: string; url: string } | null>(null);
@@ -13,6 +22,14 @@ export default function VoiceTab() {
   const handleConnect = async () => {
     setConnecting(true);
     try {
+      // Se pide el permiso del micrófono ahora, al tocar el botón, para que el
+      // navegador no lo pregunte justo cuando termina el saludo.
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach((t) => t.stop());
+      } catch (error) {
+        console.error('Sin permiso de micrófono:', error);
+      }
       const response = await fetch('/api/token');
       const data = await response.json();
       if (data.token && data.url) {
@@ -47,24 +64,84 @@ export default function VoiceTab() {
           token={connectionDetails.token}
           serverUrl={connectionDetails.url}
           connect={true}
-          audio={true}
+          // El micrófono arranca apagado: se prende cuando el asistente termina
+          // de saludar. Si se hablaba antes (el agente tarda unos segundos en
+          // despertar si estaba dormido), la conversación se desordenaba.
+          audio={false}
           onDisconnected={handleDisconnect}
           className="flex flex-col items-center justify-center gap-8 w-full"
         >
-          <AgentVisualizer />
-          <NoiseFilterControl />
-          <RoomAudioRenderer />
-          <VoiceAssistantControlBar />
-          <button
-            onClick={handleDisconnect}
-            className="flex items-center gap-2 bg-red-600 hover:bg-red-500 active:scale-95 transition-all text-white px-6 py-3 rounded-full font-medium border border-red-400/20 cursor-pointer"
-          >
-            <PhoneOff size={20} />
-            Terminar Comunicación
-          </button>
+          <Llamada onTerminar={handleDisconnect} />
         </LiveKitRoom>
       )}
     </div>
+  );
+}
+
+/** Prende el micrófono recién cuando el asistente terminó el saludo. */
+function useMicrofonoDespuesDelSaludo() {
+  const { state } = useVoiceAssistant();
+  const { localParticipant } = useLocalParticipant();
+  const [saludoEmpezo, setSaludoEmpezo] = useState(false);
+  const [tiempoAgotado, setTiempoAgotado] = useState(false);
+
+  // El agente pasa por «listening» ANTES de saludar (al arrancar la sesión),
+  // así que lo que cuenta es haber hablado y después volver a escuchar.
+  if (state === 'speaking' && !saludoEmpezo) setSaludoEmpezo(true);
+  const listo = (saludoEmpezo && state === 'listening') || tiempoAgotado;
+  const [microfonoPrendido, setMicrofonoPrendido] = useState(false);
+  const [errorMicrofono, setErrorMicrofono] = useState(false);
+  if (listo && !microfonoPrendido) setMicrofonoPrendido(true);
+
+  useEffect(() => {
+    const t = setTimeout(() => setTiempoAgotado(true), ESPERA_MAXIMA_SALUDO_MS);
+    return () => clearTimeout(t);
+  }, []);
+
+  useEffect(() => {
+    if (microfonoPrendido) {
+      localParticipant.setMicrophoneEnabled(true).catch((error) => {
+        console.error('No se pudo prender el micrófono:', error);
+        setErrorMicrofono(true);
+      });
+    }
+  }, [microfonoPrendido, localParticipant]);
+
+  return { saludoEmpezo, microfonoPrendido, errorMicrofono };
+}
+
+function Llamada({ onTerminar }: { onTerminar: () => void }) {
+  const { saludoEmpezo, microfonoPrendido, errorMicrofono } = useMicrofonoDespuesDelSaludo();
+
+  return (
+    <>
+      <AgentVisualizer microfonoPrendido={microfonoPrendido} />
+      {!microfonoPrendido && (
+        <div className="flex items-center gap-2 text-xs font-medium text-emerald-300 bg-emerald-950/40 border border-emerald-800/40 px-3 py-1.5 rounded-full">
+          <Loader2 size={12} className="animate-spin" />
+          <span>
+            {saludoEmpezo
+              ? 'Escuchá el saludo: el micrófono se activa cuando termine.'
+              : 'Conectando con el asistente… La primera llamada puede tardar unos segundos.'}
+          </span>
+        </div>
+      )}
+      {errorMicrofono && (
+        <div className="text-xs font-medium text-red-300 bg-red-950/40 border border-red-800/40 px-3 py-1.5 rounded-full">
+          No se pudo usar el micrófono: revisá que el navegador tenga permiso y que haya uno conectado.
+        </div>
+      )}
+      <NoiseFilterControl />
+      <RoomAudioRenderer />
+      {microfonoPrendido && <VoiceAssistantControlBar />}
+      <button
+        onClick={onTerminar}
+        className="flex items-center gap-2 bg-red-600 hover:bg-red-500 active:scale-95 transition-all text-white px-6 py-3 rounded-full font-medium border border-red-400/20 cursor-pointer"
+      >
+        <PhoneOff size={20} />
+        Terminar Comunicación
+      </button>
+    </>
   );
 }
 
@@ -114,7 +191,7 @@ function NoiseFilterControl() {
   );
 }
 
-function AgentVisualizer() {
+function AgentVisualizer({ microfonoPrendido }: { microfonoPrendido: boolean }) {
   const { state } = useVoiceAssistant();
 
   return (
@@ -150,7 +227,7 @@ function AgentVisualizer() {
             {state === 'speaking'
               ? 'Agente Hablando'
               : state === 'listening'
-              ? 'Escuchándote'
+              ? microfonoPrendido ? 'Escuchándote' : 'Conectando'
               : 'En espera'}
           </span>
         )}

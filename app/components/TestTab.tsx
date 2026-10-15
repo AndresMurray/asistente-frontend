@@ -75,6 +75,9 @@ interface SystemConfig {
   rerank_min_score: number | null;
 }
 
+// Si el saludo no llega en este tiempo, se habilita igual la entrada.
+const ESPERA_MAXIMA_SALUDO_MS = 45_000;
+
 export default function TestTab() {
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
@@ -82,6 +85,11 @@ export default function TestTab() {
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string>('');
+  // Hasta que llega el saludo del agente no se puede escribir: si el agente
+  // estaba dormido tarda unos segundos en despertar, y un mensaje enviado antes
+  // del saludo desordenaba la conversación.
+  const [saludoRecibido, setSaludoRecibido] = useState(false);
+  const esperaSaludoRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const roomRef = useRef<Room | null>(null);
 
@@ -91,8 +99,15 @@ export default function TestTab() {
 
   useEffect(scrollToBottom, [messages, sending]);
 
+  const liberarEntrada = () => {
+    if (esperaSaludoRef.current) clearTimeout(esperaSaludoRef.current);
+    esperaSaludoRef.current = null;
+    setSaludoRecibido(true);
+  };
+
   const handleConnect = async () => {
     setConnecting(true);
+    setSaludoRecibido(false);
     try {
       const response = await fetch('/api/token');
       const data = await response.json();
@@ -114,6 +129,9 @@ export default function TestTab() {
       r.on(RoomEvent.Disconnected, () => {
         setConnected(false);
         roomRef.current = null;
+        if (esperaSaludoRef.current) clearTimeout(esperaSaludoRef.current);
+        esperaSaludoRef.current = null;
+        setSaludoRecibido(false);
       });
 
       r.on(RoomEvent.DataReceived, (payload, participant, kind, topic) => {
@@ -147,6 +165,7 @@ export default function TestTab() {
             }]);
             setSending(false);
             setStatusMessage('');
+            liberarEntrada();
           }
         } catch (e) {
           console.error('Error parseando data:', e);
@@ -156,6 +175,8 @@ export default function TestTab() {
       await r.connect(data.url, data.token);
       roomRef.current = r;
       setConnected(true);
+      // Plan B: si el saludo no llega, no dejar a nadie sin poder escribir.
+      esperaSaludoRef.current = setTimeout(liberarEntrada, ESPERA_MAXIMA_SALUDO_MS);
     } catch (error) {
       console.error('Error conectando:', error);
       setConnecting(false);
@@ -171,7 +192,7 @@ export default function TestTab() {
   };
 
   const handleSend = async () => {
-    if (!input.trim() || !roomRef.current || sending) return;
+    if (!input.trim() || !roomRef.current || sending || !saludoRecibido) return;
 
     const userMsg: ChatMessage = {
       id: crypto.randomUUID(),
@@ -252,6 +273,16 @@ export default function TestTab() {
         {messages.map(msg => (
           <MessageBubble key={msg.id} message={msg} />
         ))}
+        {connected && !saludoRecibido && (
+          <div className="flex justify-start">
+            <div className="bg-slate-850 border border-emerald-500/30 rounded-xl px-4 py-3 flex items-center gap-3">
+              <Loader2 size={14} className="animate-spin text-emerald-400 shrink-0" />
+              <span className="text-sm text-emerald-200">
+                Conectando con el asistente… La primera llamada puede tardar unos segundos.
+              </span>
+            </div>
+          </div>
+        )}
         {sending && (
           <div className="flex justify-start">
             <div className="bg-slate-850 border border-blue-500/30 rounded-xl px-4 py-3 flex items-center gap-3 shadow-md shadow-blue-950/40 animate-pulse">
@@ -276,13 +307,15 @@ export default function TestTab() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={connected ? "Escribí tu consulta..." : "Conectate primero..."}
-            disabled={!connected || sending}
+            placeholder={
+              !connected ? "Conectate primero..." : !saludoRecibido ? "Esperando el saludo del asistente..." : "Escribí tu consulta..."
+            }
+            disabled={!connected || sending || !saludoRecibido}
             className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-4 py-2.5 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-emerald-500/50 disabled:opacity-50"
           />
           <button
             onClick={handleSend}
-            disabled={!connected || !input.trim() || sending}
+            disabled={!connected || !input.trim() || sending || !saludoRecibido}
             className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-30 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors cursor-pointer"
           >
             {sending ? <Loader2 size={16} className="animate-spin" /> : 'Enviar'}
